@@ -1,0 +1,7 @@
+black
+fastapi
+pytest
+pylint
+requests
+pandas
+openpyxl
