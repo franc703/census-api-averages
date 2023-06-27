@@ -71,11 +71,11 @@ def download_census_data(
     return df
 
 
-def compute_averages(
-    df: pd.DataFrame, variables: list, race: str, area: str, ruca: bool = False
+def compute_weighted_averages(
+    df: pd.DataFrame, variables: list, population_var: str, group_vars: list
 ) -> pd.DataFrame:
     """
-    Compute weighted averages of the given variables by race and area.
+    Compute weighted averages of the given variables based on population.
 
     Parameters
     ----------
@@ -83,81 +83,80 @@ def compute_averages(
         The DataFrame with the census data.
     variables : list of str
         The variables for which to compute averages.
-    race : str
-        The race for which to compute averages.
-    area : str
-        The area for which to compute averages. If `ruca` is `True`, this should be either 'urban' or 'rural'.
-    ruca : bool, optional
-        Whether to use RUCA codes to classify areas as 'urban' or 'rural'. The default is `False`.
+    population_var : str
+        The population variable to use for weighting.
+    group_vars : list of str
+        The variables to group by when computing averages.
 
     Returns
     -------
     df : pd.DataFrame
-        The DataFrame with the computed averages.
-
-    Note
-    ----
-    If `ruca` is `True`, the function first converts the RUCA codes to 'urban' or 'rural'
-    (based on the classification that codes 1-3 are metropolitan (urban) and 4-10 are non-metropolitan (rural)),
-    and then filters the DataFrame based on race and the RUCA classification.
+        The DataFrame with the computed weighted averages.
     """
-    if not ruca:
-        df = df[(df["race"] == race) & (df["area"] == area)]
-    else:
-        df["ruca"] = df["ruca"].apply(
-            lambda x: "urban" if int(x) in range(1, 4) else "rural"
-        )
-        df = df[(df["race"] == race) & (df["ruca"] == area)]
+    # Ensure there are no missing values
+    df.fillna(0, inplace=True)
+
+    df[population_var] = df[population_var].astype(float)
 
     for var in variables:
-        df[var] = df[var].astype(float)  # Ensure the variables are treated as numbers
+        df[var] = df[var].astype(float) * df[population_var]
 
-    df["total_population"] = df[variables].sum(axis=1)
+    df = df.groupby(group_vars).sum()
 
     for var in variables:
-        df[f"average_{var}"] = df[var] / df["total_population"]
+        df[f"average_{var}"] = df[var] / df[population_var]
 
-    return df
+    return df.reset_index()
 
 
 def process_census_data(
-    variables: list,
+    api_key: str,
     year: int,
     dataset: str,
-    area: str,
-    api_key: str,
-    race: str,
-    census_area: str,
+    variables: list,
+    geography: str,
+    population_var: str,
+    group_vars: list,
     ruca: bool = False,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+):
     """
-    Download and process census data to compute weighted averages of the given variables by race and area.
+    Download and process census data to compute weighted averages of the given variables.
 
     Parameters
     ----------
-    variables : list of str
-        The variables for which to download data and compute averages.
-    area : str
-        The area for which to download data. This should be a valid geography type for the Census API.
     api_key : str
         The API key to use for the Census API.
-    race : str
-        The race for which to compute averages.
-    census_area : str
-        The specific census area for which to compute averages. If `ruca` is `True`, this should be either 'urban' or 'rural'.
+    year : int
+        The year for which to download data.
+    dataset : str
+        The dataset from which to download data.
+    variables : list of str
+        The variables for which to download data and compute averages.
+    geography : str
+        The geography for which to download data.
+    population_var : str
+        The population variable to use for weighting.
+    group_vars : list of str
+        The variables to group by when computing averages.
     ruca : bool, optional
-        Whether to use RUCA codes to classify areas as 'urban' or 'rural'. The default is `False`.
+        Whether to use RUCA codes to classify areas. The default is `False`.
 
     Returns
     -------
-    df : pd.DataFrame
-        The DataFrame with the downloaded census data.
     avg_df : pd.DataFrame
-        The DataFrame with the computed averages.
-
+        The DataFrame with the computed weighted averages.
     """
-    df = download_census_data(
-        api_key, year, dataset, variables, geography=area, ruca=ruca
-    )
-    avg_df = compute_averages(df, variables, race, census_area, ruca=ruca)
-    return df, avg_df
+    df = download_census_data(api_key, year, dataset, variables, geography, ruca=ruca)
+
+    # Ensure the required columns exist in the DataFrame
+    assert set(variables).issubset(
+        df.columns
+    ), "Some variables are not in the DataFrame"
+    assert population_var in df.columns, f"'{population_var}' is not in the DataFrame"
+    assert set(group_vars).issubset(
+        df.columns
+    ), "Some group variables are not in the DataFrame"
+
+    avg_df = compute_weighted_averages(df, variables, population_var, group_vars)
+
+    return avg_df
