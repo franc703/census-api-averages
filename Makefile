@@ -3,9 +3,9 @@ install:
 		pip install -r requirements.txt
 
 format:
-	black *.py
+	black census_averages/*.py
 
 lint:
-	pylint --disable=R,C main.py
+	pylint --disable=R,C census_averages/main.py
 
 all: install format lint

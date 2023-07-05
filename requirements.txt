@@ -6,3 +6,7 @@ requests
 pandas
 numpy
 openpyxl
+click
+tabulate
+geopandas
+tqdm
